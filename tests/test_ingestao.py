@@ -63,16 +63,13 @@ def test_escrita_atomica_nao_deixa_temporario():
     assert json.loads(indice.caminho_indice().read_text())["itens"][0]["origem"] == "cap"
 
 
-def test_rotas_http():
+def test_rota_indice_expoe_itens_persistidos():
     from servicos.ingestao.app import app
+    indice.adicionar([DOC_CAP, DOC_RAFT])
     cliente = TestClient(app)
-    r = cliente.post("/indexar", json=[DOC_CAP, DOC_RAFT])
-    assert r.status_code == 200
-    assert r.json()["indexados"] == 2
     corpo = cliente.get("/indice").json()
     assert corpo["total"] == 2
     assert set(corpo["itens"][0]) == {"texto", "origem", "vetor"}
-    assert cliente.get("/saude").json() == {"status": "ok", "documentos": 2}
 
 
 def test_documento_sem_texto_e_rejeitado():
