@@ -11,7 +11,7 @@ testes e desvios do plano em `CLAUDE.md`. Preencher ao concluir cada tarefa.
 | 1 | Persistir o índice | concluída | `feat(ingestao): persiste o índice em arquivo JSON` |
 | 2 | Busca por similaridade | concluída | `feat(recuperacao): implementa busca por similaridade` |
 | 3 | Circuit breaker, timeout e retry no LLM | concluída | `feat(geracao): protege o LLM com retentativa, tempo-limite e disjuntor` |
-| 4 | Mensageria (fila + worker) e Docker | pendente | |
+| 4 | Mensageria (fila + worker) e Docker | concluída | `feat(worker): processa a ingestão por fila Redis`, `build(docker): adiciona Dockerfiles e compose com todos os serviços` |
 | 5 | Fluxo ponta a ponta | pendente | |
 | 6 | README com diagrama | pendente | |
 
@@ -150,3 +150,56 @@ e tempo-limite repassado, 4xx não retentado, disjuntor abre após 3×3 tentativ
 pergunta não chega ao LLM, 503 com `Retry-After`, trechos e fontes, recuperação fora do ar
 abre o segundo disjuntor, ausência de trechos relevantes, classificação de falhas e cálculo
 do backoff). Relógio e `time.sleep` simulados. `python -m pytest`: 37 passaram.
+
+## Tarefa 4 — Mensageria (fila + worker) e Docker
+
+**O que foi feito:**
+- **Fila na etapa de ingestão (Aula 8).** `POST /indexar` deixou de indexar na hora: coloca a
+  tarefa na fila Redis `fila:ingestao` e devolve **202 Accepted** com o id da tarefa. O status
+  fica em `GET /tarefas/{id}` (`pendente`, `concluida` ou `falhou`, guardado no hash
+  `tarefa:{id}` por 24 h). O novo processo `servicos/ingestao/worker.py` consome a fila,
+  vetoriza e grava o índice.
+- **Containers:** um `Dockerfile` por serviço (`servicos/<servico>/Dockerfile`, base
+  `python:3.12-slim`, usuário sem privilégios). Cada imagem leva apenas `servicos/comum` e o
+  código do próprio serviço. O `docker-compose.yml` sobe `redis`, `ingestao`,
+  `worker-ingestao`, `recuperacao` e `geracao`, com healthchecks e `depends_on` por saúde.
+
+**Decisões e justificativas:**
+- **Por que a fila fica na ingestão:** vetorizar é a etapa pesada e não precisa de resposta
+  imediata (padrão assíncrono "recebo um protocolo e busco depois"). A fila absorve picos de
+  documentos e desacopla a API do processamento: para mais vazão, basta subir mais workers.
+  A pergunta continua síncrona por REST, porque o usuário espera a resposta.
+- **Por que Redis:** já estava no compose do kit e no `requirements.txt`, e uma lista Redis
+  basta como fila ponto a ponto. Rodar RabbitMQ seria mais um container sem ganho para a rubrica.
+- **Fila confiável:** o worker usa `BLMOVE` para mover a mensagem atomicamente para
+  `fila:ingestao:processando` e só a remove depois de tratada. Se o worker cair no meio, a
+  mensagem volta para a fila quando ele reinicia (`recuperar_pendentes`). A entrega é
+  *at-least-once*, o que é seguro porque a indexação é idempotente (ids por hash, Tarefa 1).
+- **Retentativa e dead-letter:** uma tarefa que falha volta para a fila até 3 vezes
+  (`INGESTAO_MAX_TENTATIVAS`) e depois vai para `fila:ingestao:dlq`, com o erro, para análise.
+  Mensagem malformada vai direto para a dead-letter. O fluxo principal nunca trava.
+- **Escritor único do índice:** só o worker grava `indice.json`. A API de ingestão apenas lê,
+  e os dois compartilham o volume nomeado `indice-dados`. Isso evita conflito de escrita sem
+  precisar de lock distribuído (com vários workers seria preciso um lock no Redis).
+- **Redis com AOF** (`--appendonly yes`) e volume próprio: tarefas na fila sobrevivem a um
+  reinício do Redis.
+- O worker trata `SIGTERM` (`docker stop`) e termina a tarefa atual antes de sair. Se o Redis
+  cair, ele espera e tenta reconectar em vez de morrer. A API responde 503 se a fila estiver
+  indisponível.
+- **Healthchecks** usam `python -c urllib...` porque a imagem slim não tem curl.
+  `geracao` lê o `.env` opcionalmente (`required: false`), então sem `.env` roda em modo simulado.
+- `.dockerignore` mantém fora das imagens `.venv`, `.git`, `.env`, testes, documentos e o
+  material da disciplina.
+
+**Arquivos:** `servicos/ingestao/fila.py` e `servicos/ingestao/worker.py` (novos),
+`servicos/ingestao/app.py`, `servicos/*/Dockerfile`, `docker-compose.yml`, `.dockerignore`,
+`.env.example`, `tests/test_worker.py`, `tests/test_ingestao.py`.
+
+**Testes:** com `fakeredis`: `/indexar` devolve 202 e só enfileira, o worker processa e a
+tarefa fica `concluida`, fila vazia não bloqueia, mensagem repetida não duplica, falha
+retentada até a dead-letter, falha transitória superada, mensagem inválida vai para a
+dead-letter, tarefa interrompida é recuperada, 404 para tarefa inexistente, lista vazia
+rejeitada (422) e Redis fora do ar devolve 503. `python -m pytest`: 48 passaram.
+Verificação manual com `docker compose up -d --build --wait`: todos os serviços saudáveis,
+indexação pela fila, pergunta respondida com fonte, e índice preservado após
+`docker compose restart ingestao worker-ingestao`.

@@ -1,7 +1,83 @@
+name: rag-distribuido
+
+# Sobe tudo do zero:  docker compose up -d --build
+# Fluxo:  cliente -> geracao (8003) -> recuperacao (8002) -> ingestao (8001)
+#         cliente -> ingestao /indexar -> [redis: fila:ingestao] -> worker-ingestao
+
+x-saude: &saude
+  interval: 5s
+  timeout: 3s
+  retries: 12
+  start_period: 10s
+
 services:
   redis:
     image: redis:7-alpine
+    command: ["redis-server", "--appendonly", "yes"]
     ports: ["6379:6379"]
+    volumes: ["redis-dados:/data"]
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      <<: *saude
+    restart: unless-stopped
 
-  # TAREFA 4: acrescente aqui os tres servicos (ingestao, recuperacao, geracao)
-  # depois de escrever um Dockerfile para cada um.
+  # Servico 1 - ingestao: API que enfileira documentos e expoe o indice
+  ingestao:
+    build: {context: ., dockerfile: servicos/ingestao/Dockerfile}
+    ports: ["8001:8001"]
+    environment:
+      REDIS_URL: redis://redis:6379/0
+      DIR_DADOS: /dados
+    volumes: ["indice-dados:/dados"]
+    depends_on:
+      redis: {condition: service_healthy}
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8001/saude')"]
+      <<: *saude
+    restart: unless-stopped
+
+  # Consumidor da fila de ingestao: vetoriza e grava o indice no volume compartilhado
+  worker-ingestao:
+    build: {context: ., dockerfile: servicos/ingestao/Dockerfile}
+    command: ["python", "-m", "servicos.ingestao.worker"]
+    environment:
+      REDIS_URL: redis://redis:6379/0
+      DIR_DADOS: /dados
+    volumes: ["indice-dados:/dados"]
+    depends_on:
+      redis: {condition: service_healthy}
+    restart: unless-stopped
+
+  # Servico 2 - recuperacao: busca por similaridade sobre o indice da ingestao
+  recuperacao:
+    build: {context: ., dockerfile: servicos/recuperacao/Dockerfile}
+    ports: ["8002:8002"]
+    environment:
+      URL_INGESTAO: http://ingestao:8001
+    depends_on:
+      ingestao: {condition: service_healthy}
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8002/saude')"]
+      <<: *saude
+    restart: unless-stopped
+
+  # Servico 3 - geracao: monta o prompt e chama o LLM (com disjuntor, timeout e retry)
+  geracao:
+    build: {context: ., dockerfile: servicos/geracao/Dockerfile}
+    ports: ["8003:8003"]
+    # LLM_API_KEY e demais ajustes do LLM vem do .env (opcional: sem ele, modo simulado)
+    env_file:
+      - path: .env
+        required: false
+    environment:
+      URL_RECUPERACAO: http://recuperacao:8002
+    depends_on:
+      recuperacao: {condition: service_healthy}
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8003/saude')"]
+      <<: *saude
+    restart: unless-stopped
+
+volumes:
+  redis-dados:
+  indice-dados:
