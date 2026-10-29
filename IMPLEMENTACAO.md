@@ -13,7 +13,7 @@ testes e desvios do plano em `CLAUDE.md`. Preencher ao concluir cada tarefa.
 | 3 | Circuit breaker, timeout e retry no LLM | concluída | `feat(geracao): protege o LLM com retentativa, tempo-limite e disjuntor` |
 | 4 | Mensageria (fila + worker) e Docker | concluída | `feat(worker): processa a ingestão por fila Redis`, `build(docker): adiciona Dockerfiles e compose com todos os serviços` |
 | 5 | Fluxo ponta a ponta | concluída | `feat: adiciona carga de documentos e testes ponta a ponta` |
-| 6 | README com diagrama | pendente | |
+| 6 | README com diagrama | concluída | `docs: reescreve o README com arquitetura, diagrama e execução` |
 
 <!--
 Modelo para cada tarefa:
@@ -231,3 +231,22 @@ Na primeira execução um teste falhou porque havia um documento extra de um tes
 com 503 em ~2,2 s cada (3 tentativas com backoff), a quarta com 503 em 0,03 s (circuito
 aberto, LLM nem chamado), `Retry-After: 20`, corpo com os trechos recuperados e `/saude`
 mostrando `llm: aberto`. Removido o `.env`, o serviço volta ao modo simulado.
+
+## Tarefa 6 — README com diagrama
+
+**O que foi feito:** o README do kit foi reescrito como README do projeto:
+- **diagrama da arquitetura em Mermaid** (renderizado pelo GitHub), mais uma versão em texto;
+- papel, porta e rotas de cada serviço;
+- onde está a fila e por quê, com fila confiável, dead-letter e idempotência;
+- padrões de resiliência e seus parâmetros, e degradação elegante;
+- modelo de consistência do índice;
+- passo a passo de execução do zero (Docker e local), exemplos de requisição e resposta;
+- como rodar os testes e provocar falhas à mão;
+- estrutura de diretórios, tabela de variáveis de ambiente e créditos ao kit.
+
+**Decisões:** Mermaid porque o GitHub renderiza nativamente e fica versionado como texto. A
+versão em texto fica num `<details>` para quem lê fora do GitHub. O README não recomenda
+escalar workers com `--scale`, porque o índice em arquivo pressupõe um único escritor
+(limitação documentada na seção de consistência).
+
+**Testes:** a verificação final do edital está na seção seguinte.
