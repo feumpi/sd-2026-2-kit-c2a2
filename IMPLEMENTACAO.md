@@ -12,7 +12,7 @@ testes e desvios do plano em `CLAUDE.md`. Preencher ao concluir cada tarefa.
 | 2 | Busca por similaridade | concluída | `feat(recuperacao): implementa busca por similaridade` |
 | 3 | Circuit breaker, timeout e retry no LLM | concluída | `feat(geracao): protege o LLM com retentativa, tempo-limite e disjuntor` |
 | 4 | Mensageria (fila + worker) e Docker | concluída | `feat(worker): processa a ingestão por fila Redis`, `build(docker): adiciona Dockerfiles e compose com todos os serviços` |
-| 5 | Fluxo ponta a ponta | pendente | |
+| 5 | Fluxo ponta a ponta | concluída | `feat: adiciona carga de documentos e testes ponta a ponta` |
 | 6 | README com diagrama | pendente | |
 
 <!--
@@ -203,3 +203,31 @@ rejeitada (422) e Redis fora do ar devolve 503. `python -m pytest`: 48 passaram.
 Verificação manual com `docker compose up -d --build --wait`: todos os serviços saudáveis,
 indexação pela fila, pergunta respondida com fonte, e índice preservado após
 `docker compose restart ingestao worker-ingestao`.
+
+## Tarefa 5 — Fluxo ponta a ponta
+
+**O que foi feito:** `scripts/carregar_documentos.py` envia os `.txt` de `documentos/` para
+`POST /indexar` (a origem é o nome do arquivo) e acompanha a tarefa em `/tarefas/{id}` até o
+worker concluir. `tests/test_e2e.py` (marcador `e2e`) exercita o sistema real no compose.
+
+**Fluxo validado:** documentos → ingestão → fila Redis → worker → `indice.json` →
+pergunta em `/perguntar` (geração) → `/buscar` (recuperação) → `/indice` (ingestão) →
+trechos mais similares → LLM (simulado) → resposta com `fontes`.
+
+**Testes e2e** (`docker compose up -d --build --wait` e depois `python -m pytest -m e2e`):
+1. Pergunta sobre CAP volta 200, cita `teorema_cap.txt` e a resposta contém o trecho do documento.
+2. Pergunta sobre Raft cita `consenso_raft.txt`.
+3. Reindexar os mesmos documentos não duplica (idempotência pela fila).
+4. `docker compose stop recuperacao`: três perguntas recebem 503, o disjuntor da recuperação
+   abre e a quarta é recusada na hora. Com `start`, depois da espera de 20 s, a chamada de
+   teste passa e o disjuntor fecha sozinho.
+
+Resultado: 4 passaram em ~23 s, partindo de volumes vazios (`docker compose down -v`).
+Na primeira execução um teste falhou porque havia um documento extra de um teste manual no
+índice; a asserção passou a verificar "fonte presente" em vez de "primeira fonte".
+
+**Verificação manual do disjuntor do LLM:** `.env` temporário com `LLM_API_KEY` fictícia,
+`LLM_API_URL=http://127.0.0.1:9/` (porta fechada) e `LLM_TIMEOUT=2`. Resultado: três perguntas
+com 503 em ~2,2 s cada (3 tentativas com backoff), a quarta com 503 em 0,03 s (circuito
+aberto, LLM nem chamado), `Retry-After: 20`, corpo com os trechos recuperados e `/saude`
+mostrando `llm: aberto`. Removido o `.env`, o serviço volta ao modo simulado.
