@@ -250,3 +250,27 @@ escalar workers com `--scale`, porque o índice em arquivo pressupõe um único 
 (limitação documentada na seção de consistência).
 
 **Testes:** a verificação final do edital está na seção seguinte.
+
+## Verificação final (antes de entregar)
+
+Feita como pede o edital: clone limpo do repositório num diretório temporário, seguindo só o
+README.
+1. `cp .env.example .env` e `docker compose up -d --build --wait`: os 5 containers subiram
+   (4 com healthcheck "healthy").
+2. Ambiente Python, depois `python scripts/carregar_documentos.py`: 3 documentos indexados pela fila.
+3. `curl` em `/perguntar` ("o que diz o teorema CAP?"): resposta fundamentada, com fontes
+   `teorema_cap.txt` e `sistemas_distribuidos.txt`.
+4. `python -m pytest`: 48 passaram. `python -m pytest -m e2e`: 4 passaram.
+
+**Checklist "Antes de entregar" do `TAREFAS.md`:**
+- *Sem internet:* sem `LLM_API_KEY`, nenhum serviço faz chamada externa (o TF-IDF é local e o
+  LLM é simulado), e com a chave configurada mas o LLM inacessível o sistema degrada com 503
+  elegante (Tarefa 5). A internet só é necessária para baixar imagens e pacotes no primeiro
+  build. A rede da máquina não foi desligada fisicamente durante os testes.
+- *Derrubar a recuperação:* o disjuntor abre e depois fecha (teste e2e automatizado).
+- *Chave fora do código:* só em variável de ambiente ou `.env` (no `.gitignore`), e
+  `.env.example` sem segredos. Busca por chaves no código: nada encontrado.
+
+**Extensões opcionais:** citar as fontes foi implementada (Tarefa 3). Reranking, avaliação
+automática e sentence-transformers não foram feitas: não valem nota e o foco ficou no núcleo
+obrigatório.
