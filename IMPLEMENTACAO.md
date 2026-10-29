@@ -9,7 +9,7 @@ testes e desvios do plano em `CLAUDE.md`. Preencher ao concluir cada tarefa.
 |---|--------|--------|-----------|
 | 0 | Preparação (testes, dependências de dev) | concluída | `chore: prepara ambiente de testes` |
 | 1 | Persistir o índice | concluída | `feat(ingestao): persiste o índice em arquivo JSON` |
-| 2 | Busca por similaridade | pendente | |
+| 2 | Busca por similaridade | concluída | `feat(recuperacao): implementa busca por similaridade` |
 | 3 | Circuit breaker, timeout e retry no LLM | pendente | |
 | 4 | Mensageria (fila + worker) e Docker | pendente | |
 | 5 | Fluxo ponta a ponta | pendente | |
@@ -73,3 +73,29 @@ em modo simulado. Assim nenhum teste unitário depende de rede, de Docker ou de 
 **Testes:** reinício (estado vem só do arquivo), acúmulo entre chamadas, não duplicação,
 vetores no mesmo espaço após novo documento, arquivo ausente, arquivo corrompido, ausência do
 temporário após a escrita, rotas HTTP e validação de texto vazio (422). `python -m pytest`: 10 passaram.
+
+## Tarefa 2 — Busca por similaridade
+
+**O que foi feito:** `POST /buscar` lê o índice da ingestão por REST (`GET /indice`), vetoriza a
+pergunta, calcula a similaridade do cosseno com cada trecho e devolve os `top_k` mais
+parecidos, ordenados e com `texto`, `origem` e `score`.
+
+**Decisões e justificativas:**
+- **Mesmo espaço vetorial sem compartilhar código:** a recuperação não importa nada da
+  ingestão. Ela reajusta um `Vetorizador` com os textos do índice **na mesma ordem**, o que
+  gera exatamente o vocabulário usado pela ingestão, e reutiliza os vetores recebidos. Se a
+  dimensão divergir (índice gerado por outra versão), revetoriza os itens localmente.
+- A recuperação não guarda estado: lê o índice a cada consulta, então reflete atualizações
+  da ingestão sem cache para invalidar. O ranqueamento depende só do conteúdo, nunca do
+  relógio das máquinas (Aula 9).
+- **Falha parcial** (Aula 1/11): a chamada à ingestão tem timeout (`TIMEOUT_INGESTAO`, 5 s).
+  Se a ingestão estiver fora do ar, a rota responde **503** com mensagem clara, em vez de 500.
+- Validação de entrada com Pydantic: pergunta não vazia e `1 <= top_k <= 20` (422 se inválido).
+- Índice vazio não é erro: devolve `resultados: []`.
+
+**Arquivos:** `servicos/recuperacao/app.py`, `tests/test_recuperacao.py`.
+
+**Testes:** com os documentos reais de `documentos/` e o `requests.get` substituído por um
+mock: pergunta sobre CAP traz `teorema_cap.txt` em primeiro, pergunta sobre Raft traz
+`consenso_raft.txt`, ordenação e limite de `top_k`, índice vazio, dimensão divergente,
+ingestão fora do ar (503) e `top_k` inválido (422). `python -m pytest`: 17 passaram.
