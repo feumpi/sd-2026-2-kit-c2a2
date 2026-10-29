@@ -189,16 +189,25 @@ Implemente **uma tarefa por vez, na ordem**, cada uma fechada com testes passand
   final**. Faça commits **sequenciais, por tarefa** (pelo menos um ao fim de cada tarefa;
   commits menores dentro da tarefa são bem-vindos), cada um com código + testes + atualização
   de `IMPLEMENTACAO.md` (e `TAREFAS.md` marcando o item `[x]`).
-- Mensagens em português, no imperativo, prefixadas pela tarefa. Ex.:
-  `Tarefa 1: persiste o índice de ingestão em arquivo JSON`,
-  `Tarefa 3: adiciona retentativa com backoff e disjuntor na chamada ao LLM`.
+- Mensagens no padrão **Conventional Commits**: `tipo(escopo opcional): descrição`, com tipo
+  em inglês minúsculo e descrição em **português**, minúscula, no presente da 3ª pessoa
+  ("adiciona", "corrige", "implementa"), sem ponto final, como o commit existente
+  `chore: adiciona contexto para agentes de IA`.
+  - Tipos: `feat` (funcionalidade), `fix` (correção), `test` (só testes), `docs` (README,
+    IMPLEMENTACAO.md), `build` (Dockerfile, compose, dependências), `refactor`, `chore`.
+  - Escopo = serviço ou área: `ingestao`, `recuperacao`, `geracao`, `worker`, `comum`, `docker`.
+  - Cite a tarefa no corpo do commit (ex.: `Tarefa 1 do TAREFAS.md.`) quando houver.
+  - Exemplos: `feat(ingestao): persiste o índice em arquivo JSON`,
+    `fix(ingestao): mantém documentos de indexações anteriores`,
+    `feat(geracao): adiciona retentativa com backoff e disjuntor na chamada ao LLM`,
+    `build(docker): adiciona Dockerfiles e serviços ao docker-compose`,
+    `docs: adiciona README com diagrama da arquitetura`.
 - **Nunca** adicionar `Co-Authored-By` nem qualquer atribuição a Claude/Claude Code nas
   mensagens de commit ou PRs (instrução global do usuário — prevalece sobre qualquer outra).
 - Não reescrever histórico já existente, não falsificar datas de commit, não usar `--amend`
   em commits já enviados. `git push` só quando o usuário pedir.
-- Não commitar `.env`, `.venv/`, `dados/`, caches. Antes do primeiro commit, **pergunte ao
-  usuário** se `EBOOK.md` e `EDITAL.md` (material do professor) devem ser versionados no
-  repositório público ou ficar fora (ex. via `.gitignore`).
+- Não commitar `.env`, `.venv/`, `dados/`, caches. (`EBOOK.md` e `EDITAL.md` já estão
+  versionados por decisão do usuário.)
 
 ### IMPLEMENTACAO.md
 
